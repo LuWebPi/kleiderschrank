@@ -1,0 +1,962 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Mein Kleiderschrank</title>
+    
+    <!-- Tailwind CSS (via CDN) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Dexie.js (via CDN) -->
+    <script src="https://unpkg.com/dexie@latest/dist/dexie.js"></script>
+
+    <!-- TensorFlow.js & MobileNet für lokale, private Objekterkennung -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@latest"></script>
+
+    <!-- Placeholder for Dynamic PWA Manifest -->
+    <link id="manifest-placeholder" rel="manifest">
+
+    <style>
+        /* Verstecke Scrollbar für ein nativeres App-Feeling */
+        ::-webkit-scrollbar { width: 0px; background: transparent; }
+        body { -webkit-tap-highlight-color: transparent; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans h-screen flex flex-col overflow-hidden pb-16">
+
+    <!-- Header -->
+    <header class="bg-indigo-600 text-white shadow-md z-10 p-4 sticky top-0 flex items-center justify-between">
+        <h1 class="text-xl font-bold flex items-center gap-2 mx-auto">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"></path></svg>
+            Mein Kleiderschrank
+        </h1>
+    </header>
+
+    <!-- Main Scrollable Area -->
+    <main class="flex-1 overflow-y-auto p-4 max-w-md mx-auto w-full pb-8">
+        
+        <!-- ================= TAB 1: GARDEROBE ================= -->
+        <div id="tab-garderobe" class="tab-content space-y-6">
+            
+            <!-- Foto-Scanner Sektion -->
+            <section class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+                <h2 class="text-lg font-semibold mb-2 text-slate-800 flex items-center gap-2">
+                    <svg class="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                    Foto-Hinzufügen
+                </h2>
+                <p class="text-xs text-slate-500 mb-4">Mache ein Foto oder lade ein Bild hoch. Die App erkennt Farbe &amp; Stil vollautomatisch lokal auf deinem Gerät.</p>
+                
+                <div class="flex flex-col items-center justify-center border-2 border-dashed border-slate-300 rounded-xl p-6 bg-slate-50 hover:bg-indigo-50/30 transition-all cursor-pointer relative" id="drop-zone">
+                    <input type="file" id="camera-file" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" accept="image/*" onchange="handleLocalImageUpload(event)">
+                    <svg class="w-10 h-10 text-indigo-500 mb-2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                    <span class="text-sm font-semibold text-slate-700 pointer-events-none" id="drop-text">Foto aufnehmen, wählen oder reinziehen</span>
+                    <span class="text-xs text-slate-400 mt-1 pointer-events-none">100% lokal &amp; privat auf deinem Gerät</span>
+                    
+                    <!-- Lade-Overlay für KI-Analyse -->
+                    <div id="ai-loading-overlay" class="absolute inset-0 bg-slate-50/90 backdrop-blur-sm rounded-xl flex flex-col items-center justify-center hidden z-10">
+                        <div class="animate-spin rounded-full h-8 w-8 border-4 border-indigo-200 border-t-indigo-600 mb-2"></div>
+                        <span class="text-sm font-bold text-indigo-700">Lokale KI analysiert...</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Liste der Kleidungsstücke -->
+            <section class="mb-6">
+                <h2 class="text-lg font-semibold mb-3 text-slate-700 flex justify-between items-center">
+                    Meine Garderobe
+                    <span id="item-count" class="text-sm bg-indigo-100 text-indigo-700 px-2.5 py-0.5 rounded-full font-bold">0</span>
+                </h2>
+                <div id="items-list" class="space-y-3">
+                    <p class="text-center text-slate-400 py-6 text-sm">Dein Kleiderschrank ist noch leer. Lade ein Foto hoch, um zu starten!</p>
+                </div>
+            </section>
+        </div>
+
+        <!-- ================= TAB 2: OUTFITS / SETS ================= -->
+        <div id="tab-outfits" class="tab-content hidden space-y-6">
+            <section class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+                <h2 class="text-lg font-semibold mb-2 text-slate-800 flex items-center gap-2">
+                    <svg class="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>
+                    Smarter Outfit-Kombinator
+                </h2>
+                <p class="text-xs text-slate-500 mb-4">Unser lokaler Matching-Algorithmus kombiniert deine Stücke harmonisch nach Farbe und gruppiert sie für dich nach Stil.</p>
+                
+                <button onclick="generateLocalOutfits()" class="w-full bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-semibold py-3 px-4 rounded-xl transition-colors flex justify-center items-center gap-2 shadow-sm">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                    Kombinationen berechnen
+                </button>
+            </section>
+
+            <!-- Liste der Outfits -->
+            <section>
+                <h2 class="text-lg font-semibold mb-3 text-slate-700 flex justify-between items-center">
+                    Empfohlene Sets
+                    <span id="set-count" class="text-sm bg-indigo-100 text-indigo-700 px-2.5 py-0.5 rounded-full font-bold">0</span>
+                </h2>
+                <!-- Hier werden die Outfits nach Stil sortiert ausgegeben -->
+                <div id="sets-list" class="space-y-6">
+                    <p class="text-center text-slate-400 py-6 text-sm">Noch keine Sets generiert. Drücke oben auf "Kombinationen berechnen"!</p>
+                </div>
+            </section>
+        </div>
+
+        <!-- ================= TAB 3: OPTIONEN & DATEN ================= -->
+        <div id="tab-daten" class="tab-content hidden space-y-6">
+            <section class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+                <h2 class="text-lg font-semibold mb-4 text-slate-700">Backup &amp; Datenimport</h2>
+                <div class="flex flex-col gap-3">
+                    <button onclick="exportBackup()" class="w-full bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-700 font-medium py-3 px-4 rounded-xl transition-colors flex justify-center items-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                        Backup herunterladen
+                    </button>
+                    <label class="w-full bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-700 font-medium py-3 px-4 rounded-xl transition-colors flex justify-center items-center gap-2 cursor-pointer text-center relative overflow-hidden">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                        Backup hochladen (Import)
+                        <input type="file" id="import-file" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" accept=".json" onchange="importBackup(event)">
+                    </label>
+                </div>
+            </section>
+
+            <section class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+                <h2 class="text-lg font-semibold mb-2 text-red-600">Gefahrenzone</h2>
+                <p class="text-xs text-slate-500 mb-4">Hier kannst du deine gesamte lokale Datenbank unwiderruflich leeren.</p>
+                <button onclick="clearDatabase()" class="w-full bg-red-50 hover:bg-red-100 text-red-600 font-medium py-3 px-4 rounded-xl transition-colors flex justify-center items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                    Datenbank vollständig löschen
+                </button>
+            </section>
+        </div>
+    </main>
+
+    <!-- ================= SCHNELL-KLASSIFIZIERUNG MODAL ================= -->
+    <div id="class-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4 hidden transition-all duration-300">
+        <div class="bg-white w-full max-w-md rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div class="p-4 border-b border-slate-100 flex justify-between items-center bg-indigo-50">
+                <h3 class="font-bold text-slate-800 flex items-center gap-1.5">
+                    <span class="p-1 bg-indigo-600 text-white rounded-lg">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                    </span>
+                    Teil beschreiben
+                </h3>
+                <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600 p-1">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            
+            <div class="p-5 overflow-y-auto space-y-5 flex-1">
+                <!-- Bild-Vorschau, Farberkennung & Stilerkennung -->
+                <div class="flex gap-4 items-center bg-slate-50 p-3 rounded-xl border border-slate-100">
+                    <img id="modal-preview" class="w-20 h-20 object-cover rounded-lg border border-slate-200">
+                    <div class="space-y-1">
+                        <div>
+                            <span class="text-[10px] text-slate-400 block font-medium uppercase tracking-wider">Erkannte Farbe:</span>
+                            <span id="detected-color-badge" class="inline-block px-3 py-1 rounded-full text-xs font-bold text-white bg-indigo-600">Analysiere...</span>
+                        </div>
+                        <div>
+                            <span class="text-[10px] text-slate-400 block font-medium uppercase tracking-wider">Erkannter Stil:</span>
+                            <span id="detected-style-badge" class="inline-block px-3 py-0.5 rounded-full text-xs font-bold text-indigo-700 bg-indigo-100">Analysiere...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Typ-Auswahl -->
+                <div>
+                    <span class="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">1. Typ wählen</span>
+                    <div class="grid grid-cols-3 gap-2" id="type-selector">
+                        <!-- Wird dynamisch mit Buttons gefüllt -->
+                    </div>
+                </div>
+
+                <!-- Stil-Auswahl -->
+                <div>
+                    <span class="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">2. Stil (angepasst / erkannt)</span>
+                    <div class="grid grid-cols-3 gap-2" id="style-selector">
+                        <!-- Wird dynamisch mit Buttons gefüllt -->
+                    </div>
+                </div>
+            </div>
+
+            <div class="p-4 border-t border-slate-100 bg-slate-50 flex gap-3">
+                <button onclick="closeModal()" class="flex-1 py-3 px-4 rounded-xl text-slate-600 font-medium hover:bg-slate-100 transition-colors">Abbrechen</button>
+                <button onclick="saveFromModal()" class="flex-1 py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-semibold transition-colors">Im Schrank sichern</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bottom Navigation Bar -->
+    <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex justify-around p-2 z-20 shadow-lg max-w-md mx-auto rounded-t-2xl">
+        <button onclick="switchTab('garderobe')" id="nav-garderobe" class="flex-1 flex flex-col items-center justify-center py-1 text-indigo-600 font-medium transition-colors">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+            <span class="text-[10px] mt-1">Garderobe</span>
+        </button>
+        <button onclick="switchTab('outfits')" id="nav-outfits" class="flex-1 flex flex-col items-center justify-center py-1 text-slate-400 hover:text-indigo-600 font-medium transition-colors">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 011 1V4z"></path></svg>
+            <span class="text-[10px] mt-1">Outfits</span>
+        </button>
+        <button onclick="switchTab('daten')" id="nav-daten" class="flex-1 flex flex-col items-center justify-center py-1 text-slate-400 hover:text-indigo-600 font-medium transition-colors">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+            <span class="text-[10px] mt-1">Optionen</span>
+        </button>
+    </nav>
+
+    <!-- Toast Benachrichtigung -->
+    <div id="toast" class="fixed bottom-20 left-1/2 transform -translate-x-1/2 bg-slate-900 text-white px-5 py-3 rounded-xl shadow-xl opacity-0 transition-opacity duration-300 pointer-events-none z-50 flex items-center gap-2 max-w-[90%] w-max">
+        <svg id="toast-icon-success" class="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+        <span id="toast-message">Aktion erfolgreich!</span>
+    </div>
+
+    <!-- App Logik -->
+    <script>
+        // --- 1. Datenbank-Klasse mit Dexie (Version 2) ---
+        class Database {
+            constructor() {
+                this.db = new Dexie("WardrobeDB");
+                this.db.version(2).stores({
+                    clothes: '++id, type, color, style, image',
+                    sets: '++id, name, style, *itemIds'
+                });
+            }
+
+            async addItem(item) {
+                return await this.db.clothes.add(item);
+            }
+
+            async deleteItem(id) {
+                await this.db.clothes.delete(id);
+                // Bereinige Sets
+                const allSets = await this.db.sets.toArray();
+                for (let s of allSets) {
+                    if (s.itemIds.includes(id)) {
+                        const newIds = s.itemIds.filter(x => x !== id);
+                        if (newIds.length < 2) {
+                            await this.db.sets.delete(s.id);
+                        } else {
+                            await this.db.sets.update(s.id, { itemIds: newIds });
+                        }
+                    }
+                }
+            }
+
+            async getAllItems() {
+                return await this.db.clothes.toArray();
+            }
+
+            async getAllSets() {
+                return await this.db.sets.toArray();
+            }
+
+            async saveSets(setsArray) {
+                await this.db.sets.clear();
+                return await this.db.sets.bulkAdd(setsArray);
+            }
+
+            async overwriteDB(itemsArray, setsArray = []) {
+                await this.db.clothes.clear();
+                await this.db.sets.clear();
+                if (itemsArray.length > 0) {
+                    await this.db.clothes.bulkPut(itemsArray);
+                }
+                if (setsArray.length > 0) {
+                    await this.db.sets.bulkPut(setsArray);
+                }
+            }
+        }
+
+        const myDb = new Database();
+
+        // Standard-Optionen für Schnellauswahl
+        const clTypes = ["T-Shirt", "Pullover", "Hemd/Bluse", "Jeans", "Hose", "Rock/Kleid", "Jacke", "Mantel", "Schuhe"];
+        const clStyles = ["Casual", "Elegant", "Sportlich", "Business", "Streetwear", "Minimalistisch"];
+
+        // Farbpalette für lokale Pixel-Klassifizierung
+        const colorPalette = [
+            { name: 'Schwarz', r: 30, g: 30, b: 30, class: 'bg-slate-950 text-white' },
+            { name: 'Weiß', r: 245, g: 245, b: 245, class: 'bg-white text-slate-800 border border-slate-200' },
+            { name: 'Grau', r: 120, g: 120, b: 120, class: 'bg-slate-500 text-white' },
+            { name: 'Rot', r: 210, g: 40, b: 40, class: 'bg-red-600 text-white' },
+            { name: 'Blau', r: 40, g: 80, b: 200, class: 'bg-blue-600 text-white' },
+            { name: 'Grün', r: 40, g: 150, b: 70, class: 'bg-green-600 text-white' },
+            { name: 'Gelb', r: 240, g: 200, b: 40, class: 'bg-yellow-400 text-slate-900' },
+            { name: 'Beige/Creme', r: 235, g: 220, b: 195, class: 'bg-amber-100 text-amber-900' },
+            { name: 'Braun', r: 110, g: 70, b: 40, class: 'bg-amber-900 text-white' },
+            { name: 'Rosa/Pink', r: 235, g: 100, b: 160, class: 'bg-pink-400 text-white' },
+            { name: 'Orange', r: 240, g: 120, b: 30, class: 'bg-orange-500 text-white' }
+        ];
+
+        // Aktueller State im Modal
+        let currentModalImage = null;
+        let currentDetectedColor = "";
+        let currentDetectedStyle = "";
+        let selectedType = "";
+        let selectedStyle = "";
+        
+        // Lokales KI-Modell für Objekterkennung
+        let mobilenetModel = null;
+
+        // --- 2. Lokale Bildanalyse (Farbe & Stil extrahieren) ---
+        function analyzeImageLocally(imgElement) {
+            try {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                canvas.width = 50; // Kleines Bild für schnelle Performance
+                canvas.height = 50;
+                
+                ctx.drawImage(imgElement, 0, 0, 50, 50);
+                const imgData = ctx.getImageData(0, 0, 50, 50).data;
+                
+                let rSum = 0, gSum = 0, bSum = 0, count = 0;
+                let brightnessValues = [];
+                let colorDifferences = []; // Für Sättigungsschätzung
+
+                // Pixel-Daten aggregieren
+                for (let i = 0; i < imgData.length; i += 4) {
+                    if (imgData[i+3] < 128) continue; // Ignoriere transparente Pixel
+                    const r = imgData[i];
+                    const g = imgData[i+1];
+                    const b = imgData[i+2];
+
+                    rSum += r;
+                    gSum += g;
+                    bSum += b;
+
+                    // Helligkeit nach Standard-Luminanz-Formel
+                    const brightness = 0.299 * r + 0.587 * g + 0.114 * b;
+                    brightnessValues.push(brightness);
+
+                    // Sättigungsindikator (Maximaler Unterschied zwischen RGB Kanälen)
+                    const saturationIndicator = Math.max(r, g, b) - Math.min(r, g, b);
+                    colorDifferences.push(saturationIndicator);
+
+                    count++;
+                }
+                
+                if (count === 0) {
+                    return { color: colorPalette[0], style: "Casual" };
+                }
+
+                const rAvg = rSum / count;
+                const gAvg = gSum / count;
+                const bAvg = bSum / count;
+
+                // Finde die nächste Farbe aus unserer Palette (Euklidischer Abstand)
+                let minDistance = Infinity;
+                let closestColor = colorPalette[0];
+
+                colorPalette.forEach(color => {
+                    const distance = Math.sqrt(
+                        Math.pow(rAvg - color.r, 2) +
+                        Math.pow(gAvg - color.g, 2) +
+                        Math.pow(bAvg - color.b, 2)
+                    );
+                    if (distance < minDistance) {
+                        minDistance = distance;
+                        closestColor = color;
+                    }
+                });
+
+                // --- STILERKENNUNG ---
+                const avgSaturation = colorDifferences.reduce((sum, val) => sum + val, 0) / count;
+                const avgBrightness = brightnessValues.reduce((sum, val) => sum + val, 0) / count;
+
+                // Standardabweichung für Kontrast / Varianz berechnen
+                const variance = brightnessValues.reduce((sum, val) => sum + Math.pow(val - avgBrightness, 2), 0) / count;
+                const stdDev = Math.sqrt(variance);
+
+                let predictedStyle = "Casual"; // Default Fallback
+
+                const neutralColors = ["Schwarz", "Weiß", "Grau", "Beige/Creme", "Braun"];
+                const isNeutral = neutralColors.includes(closestColor.name);
+
+                // Feinjustierte Heuristik für Stil
+                if (avgSaturation < 15 && isNeutral) {
+                    predictedStyle = "Minimalistisch";
+                } else if (avgSaturation > 60 || (["Rot", "Gelb", "Orange", "Blau", "Grün"].includes(closestColor.name) && avgSaturation > 45)) {
+                    predictedStyle = "Sportlich";
+                } else if (stdDev > 60) {
+                    predictedStyle = "Streetwear";
+                } else if (["Schwarz", "Grau", "Dunkelblau"].includes(closestColor.name) && avgBrightness < 90) {
+                    predictedStyle = "Elegant";
+                } else if (["Weiß", "Hellgrau", "Beige/Creme", "Blau"].includes(closestColor.name) && avgBrightness > 140 && stdDev < 30) {
+                    predictedStyle = "Business";
+                } else {
+                    predictedStyle = "Casual"; // Sicherer Fallback
+                }
+
+                return { color: closestColor, style: predictedStyle };
+            } catch (err) {
+                console.error("Fehler bei der Pixelanalyse:", err);
+                return { color: colorPalette[0], style: "Casual" };
+            }
+        }
+
+        // --- 3. Bildkompression (Client-seitig via Canvas) ---
+        function compressAndResizeImage(file, maxWidth = 600) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = (event) => {
+                    const img = new Image();
+                    img.src = event.target.result;
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        let width = img.width;
+                        let height = img.height;
+                        if (width > maxWidth) {
+                            height = Math.round((height * maxWidth) / width);
+                            width = maxWidth;
+                        }
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+                        resolve(canvas.toDataURL('image/jpeg', 0.8));
+                    };
+                };
+                reader.onerror = error => reject(error);
+            });
+        }
+
+        // --- 4. Lokaler Upload-Handler & Farbanalyse ---
+        
+        // Hilfsfunktion: KI-Ergebnisse auf unsere Kleidungstypen mappen
+        function mapMobileNetToType(predictions) {
+            const text = predictions.map(p => p.className.toLowerCase()).join(" ");
+            if (text.includes("jean") || text.includes("trouser") || text.includes("pant")) return "Jeans";
+            if (text.includes("shirt") || text.includes("jersey")) return "T-Shirt";
+            if (text.includes("sweater") || text.includes("sweatshirt") || text.includes("cardigan")) return "Pullover";
+            if (text.includes("coat") || text.includes("jacket") || text.includes("suit") || text.includes("cloak")) return "Jacke";
+            if (text.includes("skirt") || text.includes("dress")) return "Rock/Kleid";
+            if (text.includes("shoe") || text.includes("sneaker") || text.includes("boot") || text.includes("sandal")) return "Schuhe";
+            return ""; // Nichts erkannt
+        }
+
+        async function handleLocalImageUpload(event) {
+            const file = event.target.files[0] || (event.dataTransfer && event.dataTransfer.files[0]);
+            if (!file) return;
+
+            const overlay = document.getElementById('ai-loading-overlay');
+            overlay.classList.remove('hidden');
+
+            try {
+                // Kompression durchführen
+                const compressedDataUrl = await compressAndResizeImage(file);
+                currentModalImage = compressedDataUrl;
+
+                // Bild laden für die Farbberechnung
+                const img = new Image();
+                img.src = compressedDataUrl;
+                img.onload = async () => {
+                    // 1. Lokale Pixel-Analyse (Farbe & Stil)
+                    const analysis = analyzeImageLocally(img);
+                    currentDetectedColor = analysis.color.name;
+                    currentDetectedStyle = analysis.style;
+                    
+                    // 2. MobileNet TFJS Analyse für den Typ (Objekterkennung)
+                    let detectedType = "";
+                    if (mobilenetModel) {
+                        try {
+                            const predictions = await mobilenetModel.classify(img);
+                            detectedType = mapMobileNetToType(predictions);
+                        } catch(e) { console.warn("TFJS Erkennungs-Fehler", e); }
+                    }
+
+                    // UI für das Modal aufbauen
+                    document.getElementById('modal-preview').src = compressedDataUrl;
+                    
+                    const colorBadge = document.getElementById('detected-color-badge');
+                    colorBadge.textContent = analysis.color.name;
+                    colorBadge.className = `inline-block px-3 py-1 rounded-full text-xs font-bold ${analysis.color.class}`;
+
+                    const styleBadge = document.getElementById('detected-style-badge');
+                    styleBadge.textContent = analysis.style;
+
+                    overlay.classList.add('hidden');
+                    openModal(detectedType, analysis.style);
+                };
+            } catch (err) {
+                console.error(err);
+                overlay.classList.add('hidden');
+                showToast("Bild konnte nicht verarbeitet werden.", false);
+            } finally {
+                if (event.target) event.target.value = '';
+            }
+        }
+
+        // --- Drag & Drop Funktionalität für PC ---
+        const dropZone = document.getElementById('drop-zone');
+        const dropText = document.getElementById('drop-text');
+
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('border-indigo-500', 'bg-indigo-50/50');
+            dropText.textContent = "Bild jetzt loslassen!";
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('border-indigo-500', 'bg-indigo-50/50');
+            dropText.textContent = "Foto aufnehmen, wählen oder reinziehen";
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('border-indigo-500', 'bg-indigo-50/50');
+            dropText.textContent = "Foto aufnehmen, wählen oder reinziehen";
+            handleLocalImageUpload(e);
+        });
+
+        // --- 5. Modal Steuerung ---
+        function openModal(detectedType = "", detectedStyle = "Casual") {
+            // Optionen-Buttons für Typen rendern
+            const typeSelector = document.getElementById('type-selector');
+            typeSelector.innerHTML = '';
+            selectedType = ""; // Reset
+            
+            clTypes.forEach(t => {
+                const btn = document.createElement('button');
+                
+                // Erkannten Typ vorselektieren (inkl. Toleranz für Jeans/Hose)
+                if (t === detectedType || (detectedType === "Jeans" && t === "Hose")) {
+                    btn.className = "p-3 border rounded-xl text-xs font-semibold text-white bg-indigo-600 border-indigo-600 transition active:scale-95";
+                    selectedType = t;
+                } else {
+                    btn.className = "p-3 border rounded-xl text-xs font-semibold text-slate-700 bg-slate-50 border-slate-200 transition active:scale-95";
+                }
+                
+                btn.textContent = t;
+                btn.onclick = () => selectType(btn, t);
+                typeSelector.appendChild(btn);
+            });
+
+            // Optionen-Buttons für Stile rendern und den ERKANNTEN Stil direkt auswählen!
+            const styleSelector = document.getElementById('style-selector');
+            styleSelector.innerHTML = '';
+            clStyles.forEach(s => {
+                const btn = document.createElement('button');
+                if (s === detectedStyle) {
+                    btn.className = "p-3 border rounded-xl text-xs font-semibold text-white bg-indigo-600 border-indigo-600 transition active:scale-95";
+                    selectedStyle = s; // Direkt als State sichern
+                } else {
+                    btn.className = "p-3 border rounded-xl text-xs font-semibold text-slate-700 bg-slate-50 border-slate-200 transition active:scale-95";
+                }
+                btn.textContent = s;
+                btn.onclick = () => selectStyle(btn, s);
+                styleSelector.appendChild(btn);
+            });
+
+            document.getElementById('class-modal').classList.remove('hidden');
+        }
+
+        function closeModal() {
+            document.getElementById('class-modal').classList.add('hidden');
+        }
+
+        function selectType(element, type) {
+            document.querySelectorAll('#type-selector button').forEach(b => b.classList.replace('bg-indigo-600', 'bg-slate-50'));
+            document.querySelectorAll('#type-selector button').forEach(b => b.classList.replace('text-white', 'text-slate-700'));
+            
+            element.classList.replace('bg-slate-50', 'bg-indigo-600');
+            element.classList.replace('text-slate-700', 'text-white');
+            selectedType = type;
+        }
+
+        function selectStyle(element, style) {
+            document.querySelectorAll('#style-selector button').forEach(b => b.classList.replace('bg-indigo-600', 'bg-slate-50'));
+            document.querySelectorAll('#style-selector button').forEach(b => b.classList.replace('text-white', 'text-slate-700'));
+
+            element.classList.replace('bg-slate-50', 'bg-indigo-600');
+            element.classList.replace('text-slate-700', 'text-white');
+            selectedStyle = style;
+        }
+
+        async function saveFromModal() {
+            if (!selectedType) {
+                showToast("Bitte wähle noch aus, um welchen Typ (z.B. T-Shirt) es sich handelt!");
+                return;
+            }
+            if (!selectedStyle) {
+                showToast("Bitte wähle einen Stil aus!");
+                return;
+            }
+
+            try {
+                await myDb.addItem({
+                    type: selectedType,
+                    color: currentDetectedColor,
+                    style: selectedStyle,
+                    image: currentModalImage
+                });
+
+                closeModal();
+                showToast("Teil erfolgreich gesichert!");
+                renderItems();
+            } catch (err) {
+                console.error(err);
+                showToast("Fehler beim Speichern.", false);
+            }
+        }
+
+        // --- 6. Garderobe: Rendern der Liste ---
+        async function renderItems() {
+            const listEl = document.getElementById('items-list');
+            const countEl = document.getElementById('item-count');
+            
+            try {
+                const items = await myDb.getAllItems();
+                countEl.textContent = items.length;
+                
+                if (items.length === 0) {
+                    listEl.innerHTML = '<p class="text-center text-slate-400 py-6 text-sm">Dein Kleiderschrank ist noch leer. Lade ein Foto hoch, um zu starten!</p>';
+                    return;
+                }
+
+                listEl.innerHTML = '';
+                items.reverse().forEach(item => {
+                    const div = document.createElement('div');
+                    div.className = "bg-white rounded-xl shadow-sm border border-slate-100 flex overflow-hidden transition hover:shadow-md h-24 items-center";
+                    
+                    const imgHtml = item.image 
+                        ? `<img src="${item.image}" alt="${item.type}" class="w-24 h-full object-cover bg-slate-100 flex-shrink-0">`
+                        : `<div class="w-24 h-full bg-slate-100 text-slate-400 flex items-center justify-center flex-shrink-0">
+                             <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                           </div>`;
+
+                    div.innerHTML = `
+                        ${imgHtml}
+                        <div class="flex-1 p-3 flex justify-between items-center min-w-0">
+                            <div class="truncate">
+                                <h3 class="font-bold text-slate-800 text-base truncate leading-tight">${item.type}</h3>
+                                <div class="flex flex-wrap gap-1.5 mt-1.5">
+                                    <span class="bg-indigo-50 text-indigo-700 text-[10px] font-semibold px-2 py-0.5 rounded-full">${item.color}</span>
+                                    <span class="bg-slate-100 text-slate-600 text-[10px] font-medium px-2 py-0.5 rounded-full">${item.style}</span>
+                                </div>
+                            </div>
+                            <button onclick="handleDelete(${item.id})" class="text-red-400 hover:text-red-600 bg-red-50 hover:bg-red-100 p-2.5 rounded-xl transition-colors ml-2" title="Löschen">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                            </button>
+                        </div>
+                    `;
+                    listEl.appendChild(div);
+                });
+            } catch (err) {
+                console.error(err);
+                showToast("Fehler beim Laden.", false);
+            }
+        }
+
+        async function handleDelete(id) {
+            try {
+                await myDb.deleteItem(id);
+                renderItems();
+                showToast("Element gelöscht!");
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        // --- 7. Lokaler Matching-Algorithmus (Outfit-Generator) ---
+        async function generateLocalOutfits() {
+            const items = await myDb.getAllItems();
+            if (items.length < 2) {
+                showToast("Füge mindestens 2 Teile für ein Outfit hinzu!", false);
+                return;
+            }
+
+            // Teile nach Kategorien sortieren
+            const tops = items.filter(i => ["T-Shirt", "Pullover", "Hemd/Bluse"].includes(i.type));
+            const bottoms = items.filter(i => ["Jeans", "Hose", "Rock/Kleid"].includes(i.type));
+            const jackets = items.filter(i => ["Jacke", "Mantel"].includes(i.type));
+
+            if (tops.length === 0 || bottoms.length === 0) {
+                showToast("Du brauchst mindestens ein Oberteil und ein Unterteil!", false);
+                return;
+            }
+
+            const generatedSets = [];
+
+            // Farbregeln: Neutrale Töne passen zu allem.
+            const neutralColors = ["Schwarz", "Weiß", "Grau", "Beige/Creme", "Braun"];
+
+            let count = 0;
+            for (let top of tops) {
+                for (let bottom of bottoms) {
+                    if (count >= 12) break;
+
+                    // Farb-Harmonie-Prüfung
+                    let colorMatch = false;
+                    if (top.color === bottom.color) {
+                        colorMatch = true; // Monochrom
+                    } else if (neutralColors.includes(top.color) || neutralColors.includes(bottom.color)) {
+                        colorMatch = true; // Neutraler Partner
+                    } else if (top.style === bottom.style) {
+                        colorMatch = true; // Stil-Match gleicht Farbunterschied aus
+                    }
+
+                    if (colorMatch) {
+                        const setIds = [top.id, bottom.id];
+                        let setName = `${top.type} & ${bottom.type}`;
+                        let outfitStyle = top.style || "Casual";
+
+                        // Optional: Jacke hinzufügen, die zum Stil passt
+                        const matchingJacket = jackets.find(j => j.style === top.style && !setIds.includes(j.id));
+                        if (matchingJacket) {
+                            setIds.push(matchingJacket.id);
+                            setName = `${top.type}, ${bottom.type} & ${matchingJacket.type}`;
+                        }
+
+                        // Verhindere identische Sets
+                        const idString = setIds.sort().join(',');
+                        if (!generatedSets.some(s => s.itemIds.sort().join(',') === idString)) {
+                            generatedSets.push({
+                                name: setName,
+                                style: outfitStyle, // Stil speichern für Sortierung
+                                itemIds: setIds
+                            });
+                            count++;
+                        }
+                    }
+                }
+            }
+
+            // Falls gar keine perfekten Matches generiert werden konnten, einfache Mix-Looks erstellen
+            if (generatedSets.length === 0) {
+                tops.slice(0, 3).forEach((top, index) => {
+                    const bottom = bottoms[index % bottoms.length];
+                    generatedSets.push({
+                        name: `${top.type} & ${bottom.type}`,
+                        style: top.style || "Mix-Look",
+                        itemIds: [top.id, bottom.id]
+                    });
+                });
+            }
+
+            await myDb.saveSets(generatedSets);
+            showToast(`${generatedSets.length} Outfits berechnet!`);
+            renderSets();
+        }
+
+        async function renderSets() {
+            const listEl = document.getElementById('sets-list');
+            const countEl = document.getElementById('set-count');
+
+            try {
+                const sets = await myDb.getAllSets();
+                const items = await myDb.getAllItems();
+                const itemMap = new Map(items.map(item => [item.id, item]));
+
+                countEl.textContent = sets.length;
+
+                if (sets.length === 0) {
+                    listEl.innerHTML = '<p class="text-center text-slate-400 py-6 text-sm">Noch keine Sets generiert. Drücke oben auf "Kombinationen berechnen"!</p>';
+                    return;
+                }
+
+                listEl.innerHTML = '';
+
+                // Gruppierung nach Stil
+                const groupedSets = {};
+                sets.forEach(set => {
+                    const styleName = set.style || "Anderer Stil";
+                    if (!groupedSets[styleName]) {
+                        groupedSets[styleName] = [];
+                    }
+                    groupedSets[styleName].push(set);
+                });
+
+                // Für jede Stil-Gruppe einen eigenen Bereich rendern
+                Object.keys(groupedSets).forEach(styleGroup => {
+                    const groupContainer = document.createElement('div');
+                    groupContainer.className = "space-y-3";
+
+                    groupContainer.innerHTML = `
+                        <div class="flex items-center gap-2 pt-2 pb-1 border-b border-slate-200">
+                            <span class="w-1.5 h-6 bg-indigo-600 rounded-full"></span>
+                            <h3 class="font-bold text-slate-800 text-sm uppercase tracking-wide">${styleGroup} Looks</h3>
+                            <span class="text-xs bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full font-semibold">${groupedSets[styleGroup].length}</span>
+                        </div>
+                    `;
+
+                    const groupList = document.createElement('div');
+                    groupList.className = "space-y-3";
+
+                    groupedSets[styleGroup].forEach(set => {
+                        const container = document.createElement('div');
+                        container.className = "bg-white p-4 rounded-xl shadow-sm border border-slate-100 space-y-3 transition hover:shadow-md";
+
+                        container.innerHTML = `
+                            <div class="flex justify-between items-center">
+                                <h4 class="font-bold text-slate-700 text-xs truncate">
+                                    ${set.name}
+                                </h4>
+                            </div>
+                        `;
+
+                        const itemGrid = document.createElement('div');
+                        itemGrid.className = "grid grid-cols-3 gap-2 py-1";
+
+                        set.itemIds.forEach(id => {
+                            const item = itemMap.get(id);
+                            if (item) {
+                                const itemDiv = document.createElement('div');
+                                itemDiv.className = "text-center bg-slate-50 rounded-lg overflow-hidden p-1 border border-slate-100";
+                                
+                                const imgTag = item.image 
+                                    ? `<img src="${item.image}" class="w-full h-14 object-cover rounded bg-white">`
+                                    : `<div class="w-full h-14 bg-slate-200 text-slate-400 flex items-center justify-center rounded">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path></svg>
+                                       </div>`;
+
+                                itemDiv.innerHTML = `
+                                    ${imgTag}
+                                    <span class="block text-[9px] font-semibold text-slate-700 mt-1 truncate px-0.5">${item.type}</span>
+                                    <span class="block text-[8px] text-slate-400 truncate">${item.color}</span>
+                                `;
+                                itemGrid.appendChild(itemDiv);
+                            }
+                        });
+
+                        container.appendChild(itemGrid);
+                        groupList.appendChild(container);
+                    });
+
+                    groupContainer.appendChild(groupList);
+                    listEl.appendChild(groupContainer);
+                });
+
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        // --- 8. Navigation & Utility ---
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            document.getElementById(`tab-${tabId}`).classList.remove('hidden');
+
+            document.querySelectorAll('nav button').forEach(btn => {
+                btn.classList.remove('text-indigo-600');
+                btn.classList.add('text-slate-400');
+            });
+            const activeBtn = document.getElementById(`nav-${tabId}`);
+            activeBtn.classList.remove('text-slate-400');
+            activeBtn.classList.add('text-indigo-600');
+
+            if (tabId === 'garderobe') renderItems();
+            if (tabId === 'outfits') renderSets();
+        }
+
+        function showToast(message, isSuccess = true) {
+            const toast = document.getElementById('toast');
+            document.getElementById('toast-message').textContent = message;
+            toast.classList.remove('opacity-0');
+            setTimeout(() => {
+                toast.classList.add('opacity-0');
+            }, 2500);
+        }
+
+        // --- 9. Backup & Restore ---
+        async function exportBackup() {
+            try {
+                const items = await myDb.getAllItems();
+                const sets = await myDb.getAllSets();
+                
+                const backupData = { version: 2, clothes: items, sets: sets };
+                const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `mein_kleiderschrank_backup_${new Date().toISOString().split('T')[0]}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                showToast("Backup erfolgreich erstellt!");
+            } catch (err) {
+                showToast("Fehler beim Export.", false);
+            }
+        }
+
+        async function importBackup(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    let clothes = [];
+                    let sets = [];
+
+                    if (Array.isArray(data)) {
+                        clothes = data;
+                    } else if (data.clothes) {
+                        clothes = data.clothes;
+                        sets = data.sets || [];
+                    }
+
+                    const validClothes = clothes.filter(item => item.type && item.color && item.style);
+                    await myDb.overwriteDB(validClothes, sets);
+                    
+                    renderItems();
+                    renderSets();
+                    showToast(`Importiert: ${validClothes.length} Teile!`);
+                    switchTab('garderobe');
+                } catch (err) {
+                    showToast("Fehler beim Importieren.", false);
+                }
+                event.target.value = '';
+            };
+            reader.readAsText(file);
+        }
+
+        async function clearDatabase() {
+            if (confirm("Möchtest du wirklich deinen gesamten lokalen Kleiderschrank löschen?")) {
+                await myDb.overwriteDB([], []);
+                renderItems();
+                renderSets();
+                showToast("Datenbank geleert!");
+                switchTab('garderobe');
+            }
+        }
+
+        // Initiale Daten laden
+        document.addEventListener('DOMContentLoaded', async () => {
+            renderItems();
+            
+            // Lade das leichte TFJS MobileNet Modell (nur 1MB Version) im Hintergrund
+            try {
+                mobilenetModel = await mobilenet.load({version: 1, alpha: 0.25});
+                console.log("Lokales KI-Modell für Objekterkennung geladen.");
+            } catch(err) {
+                console.warn("Konnte KI-Modell nicht laden:", err);
+            }
+        });
+
+        // PWA Setup (In-Memory Blob Manifest)
+        const manifest = {
+            name: "Lokaler Kleiderschrank",
+            short_name: "Garderobe",
+            start_url: window.location.href,
+            display: "standalone",
+            background_color: "#f8fafc",
+            theme_color: "#4f46e5",
+            icons: [{
+                src: "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgcng9IjIwIiBmaWxsPSIjNGY0NmU1Ii8+PHBhdGggZD0iTTMwLDQwIEw3MCw0MCBMNjAsOTAgTDQwLDkwIFoiIGZpbGw9IndoaXRlIiBvcGFjaXR5PSIwLjgiLz48cGF0aCBkPSJNMzUsNDAgTDUwLDIwIEw2NSw0MCBaIiBmaWxsPSJ3aGl0ZSIvPjwvc3ZnPg==",
+                sizes: "192x192 512x512",
+                type: "image/svg+xml",
+                purpose: "any maskable"
+            }]
+        };
+        const manifestBlob = new Blob([JSON.stringify(manifest)], {type: 'application/manifest+json'});
+        document.getElementById('manifest-placeholder').href = URL.createObjectURL(manifestBlob);
+
+        if ('serviceWorker' in navigator && window.location.protocol.startsWith('http') && !window.location.href.startsWith('blob:')) {
+            navigator.serviceWorker.register('service-worker.js')
+                .then(reg => console.log("Offline Modus aktiv."))
+                .catch(err => console.warn("SW nicht aktiv.", err));
+        }
+    </script>
+</body>
+</html>
